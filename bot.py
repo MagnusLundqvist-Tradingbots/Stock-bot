@@ -68,7 +68,9 @@ def send_telegram(msg: str):
 # ═════════════════════════════════════════════════════════════════════════════
 def get_price_data(symbol: str, period: str = "60d", interval: str = "1h") -> pd.DataFrame | None:
     try:
-        df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True)
+        session = requests.Session()
+        session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
+        df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True, session=session)
         if df is None or len(df) < 50:
             return None
         df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
