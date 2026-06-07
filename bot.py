@@ -377,50 +377,46 @@ def send_status():
 # MAIN LOOP
 # ═════════════════════════════════════════════════════════════════════════════
 def main():
-    log.info("🚀 Stock Trading Bot starter...")
-    send_telegram(
-        "🤖 <b>Stock Trading Bot er online!</b>\n"
-        f"Kører {len(SYMBOLS)} aktier: {', '.join(SYMBOLS.keys())}\n"
-        f"Kapital: {capital:.2f} USD | Risk/trade: {RISK_PER_TRADE*100:.0f}%"
-    )
+    log.info("🚀 Stock Trading Bot scanner...")
 
-    status_counter = 0
+    try:
+        now = datetime.now()
 
-    while True:
+        # Scan kun i markedstimer (14:30-21:00 UTC = USA markedet)
+        # Commodities handler næsten 24/7 — scan altid for dem
+        market_open = (now.hour >= 14 and now.minute >= 30) or now.hour in range(15, 21)
+
+        # Check exits
+        if positions:
+            check_exits()
+
+        # Check entries
+        for symbol, name in SYMBOLS.items():
+            is_commodity = symbol.endswith("=F")
+            if market_open or is_commodity:
+                check_entry(symbol, name)
+                time.sleep(2)  # Rate limit
+
+        # Send status hver 4. kørsel (styres via fil-tæller)
+        counter_file = "/tmp/scan_counter.txt"
         try:
-            now = datetime.now()
+            with open(counter_file, "r") as f:
+                counter = int(f.read().strip())
+        except Exception:
+            counter = 0
 
-            # Scan kun i markedstimer (14:30-21:00 UTC = USA markedet)
-            # Commodities handler næsten 24/7 — scan altid for dem
-            market_open = (now.hour >= 14 and now.minute >= 30) or now.hour in range(15, 21)
+        counter += 1
+        if counter >= 4:
+            send_status()
+            counter = 0
 
-            # Check exits altid
-            if positions:
-                check_exits()
+        with open(counter_file, "w") as f:
+            f.write(str(counter))
 
-            # Check entries
-            for symbol, name in SYMBOLS.items():
-                is_commodity = symbol.endswith("=F")
-                if market_open or is_commodity:
-                    check_entry(symbol, name)
-                    time.sleep(2)  # Rate limit
+        log.info(f"Scan færdig. Positioner: {len(positions)}")
 
-            # Send status hver 4. scan (ca. hver time)
-            status_counter += 1
-            if status_counter >= 4:
-                send_status()
-                status_counter = 0
-
-            log.info(f"Scan færdig. Næste scan om {SCAN_INTERVAL//60} min. Positioner: {len(positions)}")
-            time.sleep(SCAN_INTERVAL)
-
-        except KeyboardInterrupt:
-            log.info("Bot stoppet manuelt")
-            send_telegram("🛑 <b>Bot stoppet</b>")
-            break
-        except Exception as e:
-            log.error(f"Uventet fejl i main loop: {e}")
-            time.sleep(60)
+    except Exception as e:
+        log.error(f"Fejl i scan: {e}")
 
 
 if __name__ == "__main__":
