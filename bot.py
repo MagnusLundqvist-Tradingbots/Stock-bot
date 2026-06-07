@@ -2,12 +2,10 @@ import os
 import time
 import logging
 import requests
-import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-import json
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -21,30 +19,30 @@ log = logging.getLogger(__name__)
 TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 FINNHUB_KEY      = os.getenv("FINNHUB_KEY", "")
+AV_KEY           = os.getenv("AV_KEY", "")
 
 # ── Trading parametre ─────────────────────────────────────────────────────────
 SYMBOLS = {
     "NVDA":  "NVIDIA",
     "AAPL":  "Apple",
     "MSFT":  "Microsoft",
-    "CL=F":  "US Oil",
-    "GC=F":  "Guld",
+    "USO":   "US Oil ETF",
+    "GLD":   "Guld ETF",
 }
 
-CAPITAL          = 10_000.0   # Start kapital USD
-RISK_PER_TRADE   = 0.02       # 2% af kapital per trade
-MAX_POSITIONS    = 3          # Max åbne positioner
-ATR_SL_MULT      = 1.5        # SL = 1.5x ATR
-ATR_TP_MULT      = 3.0        # TP = 3.0x ATR (R:R = 1:2)
+CAPITAL          = 10_000.0
+RISK_PER_TRADE   = 0.02
+MAX_POSITIONS    = 3
+ATR_SL_MULT      = 1.5
+ATR_TP_MULT      = 3.0
 RSI_PERIOD       = 14
 RSI_OVERSOLD     = 35
 RSI_OVERBOUGHT   = 65
-SCAN_INTERVAL    = 900        # 15 min mellem scans
-NEWS_MIN_SCORE   = 0.15       # Min sentiment score for signal
+NEWS_MIN_SCORE   = 0.15
 
 # ── State ─────────────────────────────────────────────────────────────────────
-positions   = {}   # { symbol: {entry, sl, tp, size, direction, pnl} }
-trade_log   = []   # Alle lukkede trades
+positions   = {}
+trade_log   = []
 capital     = CAPITAL
 analyzer    = SentimentIntensityAnalyzer()
 
@@ -64,19 +62,62 @@ def send_telegram(msg: str):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# MARKEDSDATA
+# MARKEDSDATA via Alpha Vantage
 # ═════════════════════════════════════════════════════════════════════════════
-def get_price_data(symbol: str, period: str = "60d", interval: str = "1h") -> pd.DataFrame | None:
+def get_price_data(symbol: str) -> pd.DataFrame | None:
     try:
-        session = requests.Session()
-        session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
-        df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True, session=session)
-        if df is None or len(df) < 50:
+        url = (
+            f"https://www.alphavantage.co/query"
+            f"?function=TIME_SERIES_INTRADAY"
+            f"&symbol={symbol}"
+            f"&interval=60min"
+            f"&outputsize=full"
+            f"&apikey={AV_KEY}"
+        )
+        resp = requests.get(url, timeout=15)
+        data = resp.json()
+
+        ts_key = "Time Series (60min)"
+        if ts_key not in data:
+            log.error(f"Alpha Vantage fejl for {symbol}: {data.get('Note') or data.get('Information') or data}")
             return None
-        df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+
+        rows = []
+        for dt_str, vals in data[ts_key].items():
+            rows.append({
+                "Datetime": pd.to_datetime(dt_str),
+                "Open":     float(vals["1. open"]),
+                "High":     float(vals["2. high"]),
+                "Low":      float(vals["3. low"]),
+                "Close":    float(vals["4. close"]),
+                "Volume":   float(vals["5. volume"]),
+            })
+
+        df = pd.DataFrame(rows).sort_values("Datetime").reset_index(drop=True)
+        if len(df) < 50:
+            log.warning(f"For få datapunkter for {symbol}: {len(df)}")
+            return None
         return df
+
     except Exception as e:
         log.error(f"Pris-data fejl {symbol}: {e}")
+        return None
+
+
+def get_current_price(symbol: str) -> float | None:
+    try:
+        url = (
+            f"https://www.alphavantage.co/query"
+            f"?function=GLOBAL_QUOTE"
+            f"&symbol={symbol}"
+            f"&apikey={AV_KEY}"
+        )
+        resp = requests.get(url, timeout=10)
+        data = resp.json()
+        price = data.get("Global Quote", {}).get("05. price")
+        return float(price) if price else None
+    except Exception as e:
+        log.error(f"Pris fejl {symbol}: {e}")
         return None
 
 
@@ -92,9 +133,9 @@ def calc_rsi(series: pd.Series, period: int = 14) -> pd.Series:
 
 
 def calc_macd(series: pd.Series):
-    ema12 = series.ewm(span=12, adjust=False).mean()
-    ema26 = series.ewm(span=26, adjust=False).mean()
-    macd  = ema12 - ema26
+    ema12  = series.ewm(span=12, adjust=False).mean()
+    ema26  = series.ewm(span=26, adjust=False).mean()
+    macd   = ema12 - ema26
     signal = macd.ewm(span=9, adjust=False).mean()
     return macd, signal
 
@@ -115,7 +156,7 @@ def get_signals(symbol: str) -> dict | None:
     if df is None:
         return None
 
-    close = df["Close"].squeeze()
+    close = df["Close"]
     rsi   = calc_rsi(close, RSI_PERIOD)
     macd, macd_signal = calc_macd(close)
     atr   = calc_atr(df)
@@ -126,20 +167,17 @@ def get_signals(symbol: str) -> dict | None:
     last_atr    = float(atr.iloc[-1])
     last_price  = float(close.iloc[-1])
 
-    # Trend: EMA50 vs EMA200
     ema50  = float(close.ewm(span=50,  adjust=False).mean().iloc[-1])
     ema200 = float(close.ewm(span=200, adjust=False).mean().iloc[-1])
     uptrend = ema50 > ema200
 
     return {
-        "price":      last_price,
-        "rsi":        last_rsi,
-        "macd":       last_macd,
-        "macd_sig":   last_signal,
-        "atr":        last_atr,
-        "uptrend":    uptrend,
-        "ema50":      ema50,
-        "ema200":     ema200,
+        "price":    last_price,
+        "rsi":      last_rsi,
+        "macd":     last_macd,
+        "macd_sig": last_signal,
+        "atr":      last_atr,
+        "uptrend":  uptrend,
     }
 
 
@@ -147,13 +185,8 @@ def get_signals(symbol: str) -> dict | None:
 # NYHEDER & SENTIMENT
 # ═════════════════════════════════════════════════════════════════════════════
 def get_news_sentiment(symbol: str) -> float:
-    """Returnerer sentiment score -1.0 til +1.0"""
-    # Finnhub bruger ticker uden =F suffix
-    ticker = symbol.replace("=F", "")
-    # Map til Finnhub-venlige symboler
-    ticker_map = {"CL": "USO", "GC": "GLD"}
-    ticker = ticker_map.get(ticker, ticker)
-
+    ticker_map = {"USO": "CL", "GLD": "GC"}
+    ticker = ticker_map.get(symbol, symbol)
     try:
         to_date   = datetime.now().strftime("%Y-%m-%d")
         from_date = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
@@ -165,17 +198,12 @@ def get_news_sentiment(symbol: str) -> float:
         news = resp.json()
         if not isinstance(news, list) or len(news) == 0:
             return 0.0
-
         scores = []
         for article in news[:10]:
-            headline = article.get("headline", "")
-            summary  = article.get("summary", "")
-            text     = f"{headline}. {summary}"
-            score    = analyzer.polarity_scores(text)["compound"]
+            text  = f"{article.get('headline', '')}. {article.get('summary', '')}"
+            score = analyzer.polarity_scores(text)["compound"]
             scores.append(score)
-
         return float(np.mean(scores)) if scores else 0.0
-
     except Exception as e:
         log.error(f"Nyheder fejl {symbol}: {e}")
         return 0.0
@@ -185,7 +213,6 @@ def get_news_sentiment(symbol: str) -> float:
 # POSITION SIZING
 # ═════════════════════════════════════════════════════════════════════════════
 def calc_position_size(price: float, atr: float) -> tuple[float, float, float]:
-    """Returnerer (size, sl_price, tp_price) for LONG"""
     sl_dist  = atr * ATR_SL_MULT
     risk_usd = capital * RISK_PER_TRADE
     size     = risk_usd / sl_dist
@@ -217,79 +244,60 @@ def check_entry(symbol: str, name: str):
     uptrend   = sig["uptrend"]
     atr       = sig["atr"]
 
-    # ── LONG signal ───────────────────────────────────────────────────────────
     long_signal = (
-        rsi < RSI_OVERSOLD and          # RSI oversolgt
-        macd > macd_sig and             # MACD bullish crossover
-        uptrend and                     # Over EMA200
-        sentiment > NEWS_MIN_SCORE      # Positiv nyhedssentiment
+        rsi < RSI_OVERSOLD and
+        macd > macd_sig and
+        uptrend and
+        sentiment > NEWS_MIN_SCORE
     )
 
-    # ── SHORT signal (kun stocks der understøtter det) ────────────────────────
     short_signal = (
-        rsi > RSI_OVERBOUGHT and        # RSI overkøbt
-        macd < macd_sig and             # MACD bearish crossover
-        not uptrend and                 # Under EMA200
-        sentiment < -NEWS_MIN_SCORE     # Negativ nyhedssentiment
+        rsi > RSI_OVERBOUGHT and
+        macd < macd_sig and
+        not uptrend and
+        sentiment < -NEWS_MIN_SCORE
     )
 
     if long_signal:
         size, sl, tp = calc_position_size(price, atr)
         cost = size * price
         if cost > capital:
-            log.info(f"Ikke nok kapital til {symbol}")
             return
 
         positions[symbol] = {
-            "entry":     price,
-            "sl":        sl,
-            "tp":        tp,
-            "size":      size,
-            "direction": "LONG",
-            "name":      name,
-            "opened_at": datetime.now().isoformat(),
+            "entry": price, "sl": sl, "tp": tp,
+            "size": size, "direction": "LONG", "name": name,
         }
         capital -= cost
 
-        msg = (
+        send_telegram(
             f"🟢 <b>PAPER LONG åbnet</b>\n"
             f"Aktie: {name} ({symbol})\n"
             f"Pris: {price:.4f}\n"
             f"SL: {sl:.4f} | TP: {tp:.4f}\n"
-            f"Størrelse: {size:.4f} enheder\n"
-            f"Sentiment: {'positiv' if sentiment > 0 else 'neutral'}\n"
-            f"RSI: {rsi:.1f} | MACD: {'bullish' if macd > macd_sig else 'bearish'}\n"
+            f"Sentiment: positiv | RSI: {rsi:.1f}\n"
             f"Kapital: {capital:.2f} USD"
         )
-        send_telegram(msg)
         log.info(f"LONG åbnet: {symbol} @ {price}")
 
     elif short_signal:
-        size, sl_dist, _ = calc_position_size(price, atr)
+        size, _, _ = calc_position_size(price, atr)
         sl = price + (atr * ATR_SL_MULT)
         tp = price - (atr * ATR_SL_MULT * ATR_TP_MULT)
 
         positions[symbol] = {
-            "entry":     price,
-            "sl":        sl,
-            "tp":        tp,
-            "size":      size,
-            "direction": "SHORT",
-            "name":      name,
-            "opened_at": datetime.now().isoformat(),
+            "entry": price, "sl": sl, "tp": tp,
+            "size": size, "direction": "SHORT", "name": name,
         }
 
-        msg = (
+        send_telegram(
             f"🔴 <b>PAPER SHORT åbnet</b>\n"
             f"Aktie: {name} ({symbol})\n"
             f"Pris: {price:.4f}\n"
             f"SL: {sl:.4f} | TP: {tp:.4f}\n"
-            f"Størrelse: {size:.4f} enheder\n"
-            f"Sentiment: negativ\n"
-            f"RSI: {rsi:.1f} | MACD: {'bearish'}\n"
+            f"Sentiment: negativ | RSI: {rsi:.1f}\n"
             f"Kapital: {capital:.2f} USD"
         )
-        send_telegram(msg)
         log.info(f"SHORT åbnet: {symbol} @ {price}")
 
 
@@ -298,13 +306,8 @@ def check_exits():
 
     to_close = []
     for symbol, pos in positions.items():
-        try:
-            ticker = yf.Ticker(symbol)
-            current = ticker.fast_info.get("last_price") or ticker.fast_info.last_price
-            if current is None:
-                continue
-            current = float(current)
-        except Exception:
+        current = get_current_price(symbol)
+        if current is None:
             continue
 
         entry     = pos["entry"]
@@ -314,37 +317,24 @@ def check_exits():
         direction = pos["direction"]
         name      = pos["name"]
 
-        hit_tp = (direction == "LONG"  and current >= tp) or (direction == "SHORT" and current <= tp)
-        hit_sl = (direction == "LONG"  and current <= sl) or (direction == "SHORT" and current >= sl)
+        hit_tp = (direction == "LONG" and current >= tp) or (direction == "SHORT" and current <= tp)
+        hit_sl = (direction == "LONG" and current <= sl) or (direction == "SHORT" and current >= sl)
 
         if hit_tp or hit_sl:
-            if direction == "LONG":
-                pnl = (current - entry) * size
-            else:
-                pnl = (entry - current) * size
-
+            pnl    = (current - entry) * size if direction == "LONG" else (entry - current) * size
             capital += (entry * size) + pnl
-            reason   = "TP" if hit_tp else "SL"
-            emoji    = "✅" if hit_tp else "❌"
+            reason  = "TP" if hit_tp else "SL"
+            emoji   = "✅" if hit_tp else "❌"
 
-            trade_log.append({
-                "symbol":    symbol,
-                "direction": direction,
-                "entry":     entry,
-                "exit":      current,
-                "pnl":       pnl,
-                "reason":    reason,
-                "closed_at": datetime.now().isoformat(),
-            })
+            trade_log.append({"symbol": symbol, "pnl": pnl, "reason": reason})
 
-            msg = (
+            send_telegram(
                 f"{emoji} <b>PAPER trade lukket — {reason}</b>\n"
                 f"Aktie: {name} ({symbol})\n"
                 f"Entry: {entry:.4f} → Exit: {current:.4f}\n"
                 f"PnL: {'+' if pnl >= 0 else ''}{pnl:.2f} USD\n"
                 f"Kapital: {capital:.2f} USD"
             )
-            send_telegram(msg)
             log.info(f"Lukket {symbol}: {reason} PnL={pnl:.2f}")
             to_close.append(symbol)
 
@@ -353,53 +343,38 @@ def check_exits():
 
 
 def send_status():
-    total_pnl  = sum(t["pnl"] for t in trade_log)
-    wins       = sum(1 for t in trade_log if t["pnl"] > 0)
+    total_pnl    = sum(t["pnl"] for t in trade_log)
+    wins         = sum(1 for t in trade_log if t["pnl"] > 0)
     total_trades = len(trade_log)
-    wr         = f"{wins/total_trades*100:.1f}%" if total_trades > 0 else "N/A"
+    wr           = f"{wins/total_trades*100:.1f}%" if total_trades > 0 else "N/A"
 
-    open_pos = ""
-    if positions:
-        for sym, p in positions.items():
-            open_pos += f"\n  {sym}: {p['direction']} @ {p['entry']:.4f}"
-    else:
-        open_pos = "\n  ingen"
+    open_pos = "\n  ingen" if not positions else ""
+    for sym, p in positions.items():
+        open_pos += f"\n  {sym}: {p['direction']} @ {p['entry']:.4f}"
 
-    msg = (
+    send_telegram(
         f"📊 <b>PAPER STATUS</b>\n"
         f"Kapital: {capital:.2f} USD\n"
         f"Total PnL: {'+' if total_pnl >= 0 else ''}{total_pnl:.2f} USD\n"
         f"Trades: {total_trades} | WR: {wr}\n"
         f"Åbne positioner:{open_pos}"
     )
-    send_telegram(msg)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# MAIN LOOP
+# MAIN
 # ═════════════════════════════════════════════════════════════════════════════
 def main():
     log.info("🚀 Stock Trading Bot scanner...")
 
     try:
-        now = datetime.now()
-
-        # Scan kun i markedstimer (14:30-21:00 UTC = USA markedet)
-        # Commodities handler næsten 24/7 — scan altid for dem
-        market_open = (now.hour >= 14 and now.minute >= 30) or now.hour in range(15, 21)
-
-        # Check exits
         if positions:
             check_exits()
 
-        # Check entries
         for symbol, name in SYMBOLS.items():
-            is_commodity = symbol.endswith("=F")
-            if market_open or is_commodity:
-                check_entry(symbol, name)
-                time.sleep(2)  # Rate limit
+            check_entry(symbol, name)
+            time.sleep(13)  # Alpha Vantage: max 5 req/min på gratis tier
 
-        # Send status hver 4. kørsel (styres via fil-tæller)
         counter_file = "/tmp/scan_counter.txt"
         try:
             with open(counter_file, "r") as f:
