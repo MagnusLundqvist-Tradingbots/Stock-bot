@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import logging
 import requests
@@ -11,7 +12,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()]
+    handlers=[logging.StreamHandler(), logging.FileHandler("bot.log")]
 )
 log = logging.getLogger(__name__)
 
@@ -19,15 +20,14 @@ log = logging.getLogger(__name__)
 TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 FINNHUB_KEY      = os.getenv("FINNHUB_KEY", "")
-AV_KEY           = os.getenv("AV_KEY", "")
 
 # ── Trading parametre ─────────────────────────────────────────────────────────
 SYMBOLS = {
     "NVDA":  "NVIDIA",
     "AAPL":  "Apple",
     "MSFT":  "Microsoft",
-    "USO":   "US Oil ETF",
-    "GLD":   "Guld ETF",
+    "CL=F":  "US Oil",
+    "GC=F":  "Guld",
 }
 
 CAPITAL          = 10_000.0
@@ -40,11 +40,37 @@ RSI_OVERSOLD     = 35
 RSI_OVERBOUGHT   = 65
 NEWS_MIN_SCORE   = 0.15
 
-# ── State ─────────────────────────────────────────────────────────────────────
-positions   = {}
-trade_log   = []
-capital     = CAPITAL
-analyzer    = SentimentIntensityAnalyzer()
+STATE_FILE = "state.json"
+
+analyzer = SentimentIntensityAnalyzer()
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STATE PERSISTENCE
+# ═════════════════════════════════════════════════════════════════════════════
+def load_state():
+    """Loader state fra JSON fil"""
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            log.error(f"Kunne ikke loade state: {e}")
+    return {
+        "capital": CAPITAL,
+        "positions": {},
+        "trade_log": [],
+        "scan_counter": 0,
+        "last_scan": None
+    }
+
+
+def save_state(state):
+    """Gemmer state til JSON fil"""
+    try:
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f, indent=2, default=str)
+    except Exception as e:
+        log.error(f"Kunne ikke gemme state: {e}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -56,48 +82,64 @@ def send_telegram(msg: str):
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     try:
-        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "HTML"}, timeout=10)
+        resp = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "HTML"}, timeout=10)
+        if resp.status_code != 200:
+            log.warning(f"Telegram fejl: {resp.status_code} - {resp.text}")
     except Exception as e:
         log.error(f"Telegram fejl: {e}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# MARKEDSDATA via Alpha Vantage
+# MARKEDSDATA via yfinance (gratis, ingen rate limits)
 # ═════════════════════════════════════════════════════════════════════════════
+try:
+    import yfinance as yf
+    YFINANCE_AVAILABLE = True
+except ImportError:
+    YFINANCE_AVAILABLE = False
+    log.warning("yfinance ikke installeret - bruger fallback")
+
+
 def get_price_data(symbol: str) -> pd.DataFrame | None:
+    """Henter pris-data via yfinance (gratis, ingen API key)"""
+    if not YFINANCE_AVAILABLE:
+        log.error("yfinance ikke tilgængelig")
+        return None
+
     try:
-        url = (
-            f"https://www.alphavantage.co/query"
-            f"?function=TIME_SERIES_INTRADAY"
-            f"&symbol={symbol}"
-            f"&interval=60min"
-            f"&outputsize=full"
-            f"&apikey={AV_KEY}"
-        )
-        resp = requests.get(url, timeout=15)
-        data = resp.json()
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period="60d", interval="1h")
 
-        ts_key = "Time Series (60min)"
-        if ts_key not in data:
-            log.error(f"Alpha Vantage fejl for {symbol}: {data.get('Note') or data.get('Information') or data}")
+        if df is None or len(df) < 50:
+            log.warning(f"For få datapunkter for {symbol}: {len(df) if df is not None else 0}")
             return None
 
-        rows = []
-        for dt_str, vals in data[ts_key].items():
-            rows.append({
-                "Datetime": pd.to_datetime(dt_str),
-                "Open":     float(vals["1. open"]),
-                "High":     float(vals["2. high"]),
-                "Low":      float(vals["3. low"]),
-                "Close":    float(vals["4. close"]),
-                "Volume":   float(vals["5. volume"]),
-            })
+        df = df.reset_index()
 
-        df = pd.DataFrame(rows).sort_values("Datetime").reset_index(drop=True)
-        if len(df) < 50:
-            log.warning(f"For få datapunkter for {symbol}: {len(df)}")
+        # Standardiser kolonne navne
+        rename_map = {}
+        for col in df.columns:
+            c = str(col).lower()
+            if "open" in c:
+                rename_map[col] = "Open"
+            elif "high" in c:
+                rename_map[col] = "High"
+            elif "low" in c:
+                rename_map[col] = "Low"
+            elif "close" in c:
+                rename_map[col] = "Close"
+            elif "volume" in c:
+                rename_map[col] = "Volume"
+            elif "datetime" in c or "date" in c:
+                rename_map[col] = "Datetime"
+
+        df = df.rename(columns=rename_map)
+
+        if not all(c in df.columns for c in ["Open", "High", "Low", "Close", "Volume", "Datetime"]):
+            log.error(f"Manglende kolonner for {symbol}: {df.columns.tolist()}")
             return None
-        return df
+
+        return df.sort_values("Datetime").reset_index(drop=True)
 
     except Exception as e:
         log.error(f"Pris-data fejl {symbol}: {e}")
@@ -105,19 +147,15 @@ def get_price_data(symbol: str) -> pd.DataFrame | None:
 
 
 def get_current_price(symbol: str) -> float | None:
+    """Henter nuværende pris via yfinance"""
+    if not YFINANCE_AVAILABLE:
+        return None
     try:
-        url = (
-            f"https://www.alphavantage.co/query"
-            f"?function=GLOBAL_QUOTE"
-            f"&symbol={symbol}"
-            f"&apikey={AV_KEY}"
-        )
-        resp = requests.get(url, timeout=10)
-        data = resp.json()
-        price = data.get("Global Quote", {}).get("05. price")
-        return float(price) if price else None
+        ticker = yf.Ticker(symbol)
+        info = ticker.fast_info
+        return float(info.last_price) if info.last_price else None
     except Exception as e:
-        log.error(f"Pris fejl {symbol}: {e}")
+        log.error(f"Nuværende pris fejl {symbol}: {e}")
         return None
 
 
@@ -185,8 +223,14 @@ def get_signals(symbol: str) -> dict | None:
 # NYHEDER & SENTIMENT
 # ═════════════════════════════════════════════════════════════════════════════
 def get_news_sentiment(symbol: str) -> float:
-    ticker_map = {"USO": "CL", "GLD": "GC"}
+    """Henter nyheder fra Finnhub og beregner sentiment"""
+    if not FINNHUB_KEY:
+        return 0.0
+
+    # Map futures til underliggende for nyheder
+    ticker_map = {"CL=F": "CL", "GC=F": "GC"}
     ticker = ticker_map.get(symbol, symbol)
+
     try:
         to_date   = datetime.now().strftime("%Y-%m-%d")
         from_date = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
@@ -196,14 +240,18 @@ def get_news_sentiment(symbol: str) -> float:
         )
         resp = requests.get(url, timeout=10)
         news = resp.json()
+
         if not isinstance(news, list) or len(news) == 0:
             return 0.0
+
         scores = []
         for article in news[:10]:
             text  = f"{article.get('headline', '')}. {article.get('summary', '')}"
             score = analyzer.polarity_scores(text)["compound"]
             scores.append(score)
+
         return float(np.mean(scores)) if scores else 0.0
+
     except Exception as e:
         log.error(f"Nyheder fejl {symbol}: {e}")
         return 0.0
@@ -212,10 +260,10 @@ def get_news_sentiment(symbol: str) -> float:
 # ═════════════════════════════════════════════════════════════════════════════
 # POSITION SIZING
 # ═════════════════════════════════════════════════════════════════════════════
-def calc_position_size(price: float, atr: float) -> tuple[float, float, float]:
+def calc_position_size(price: float, atr: float, available_capital: float) -> tuple[float, float, float]:
     sl_dist  = atr * ATR_SL_MULT
-    risk_usd = capital * RISK_PER_TRADE
-    size     = risk_usd / sl_dist
+    risk_usd = available_capital * RISK_PER_TRADE
+    size     = risk_usd / sl_dist if sl_dist > 0 else 0
     sl_price = price - sl_dist
     tp_price = price + (sl_dist * ATR_TP_MULT)
     return round(size, 4), round(sl_price, 4), round(tp_price, 4)
@@ -224,12 +272,10 @@ def calc_position_size(price: float, atr: float) -> tuple[float, float, float]:
 # ═════════════════════════════════════════════════════════════════════════════
 # TRADING LOGIK
 # ═════════════════════════════════════════════════════════════════════════════
-def check_entry(symbol: str, name: str):
-    global capital
-
-    if symbol in positions:
+def check_entry(symbol: str, name: str, state: dict):
+    if symbol in state["positions"]:
         return
-    if len(positions) >= MAX_POSITIONS:
+    if len(state["positions"]) >= MAX_POSITIONS:
         return
 
     sig = get_signals(symbol)
@@ -243,6 +289,10 @@ def check_entry(symbol: str, name: str):
     macd_sig  = sig["macd_sig"]
     uptrend   = sig["uptrend"]
     atr       = sig["atr"]
+
+    # Beregn hvor meget kapital der er bundet i åbne positioner
+    tied_capital = sum(p["size"] * p["entry"] for p in state["positions"].values())
+    available = state["capital"] - tied_capital
 
     long_signal = (
         rsi < RSI_OVERSOLD and
@@ -259,53 +309,65 @@ def check_entry(symbol: str, name: str):
     )
 
     if long_signal:
-        size, sl, tp = calc_position_size(price, atr)
+        size, sl, tp = calc_position_size(price, atr, available)
         cost = size * price
-        if cost > capital:
+
+        if cost > available or size <= 0:
+            log.info(f"Ikke nok kapital til LONG {symbol}")
             return
 
-        positions[symbol] = {
+        state["positions"][symbol] = {
             "entry": price, "sl": sl, "tp": tp,
             "size": size, "direction": "LONG", "name": name,
+            "opened_at": datetime.now().isoformat()
         }
-        capital -= cost
+        state["capital"] -= cost
 
         send_telegram(
             f"🟢 <b>PAPER LONG åbnet</b>\n"
             f"Aktie: {name} ({symbol})\n"
             f"Pris: {price:.4f}\n"
             f"SL: {sl:.4f} | TP: {tp:.4f}\n"
-            f"Sentiment: positiv | RSI: {rsi:.1f}\n"
-            f"Kapital: {capital:.2f} USD"
+            f"Sentiment: {sentiment:.2f} | RSI: {rsi:.1f}\n"
+            f"Kapital: {state['capital']:.2f} USD"
         )
         log.info(f"LONG åbnet: {symbol} @ {price}")
 
     elif short_signal:
-        size, _, _ = calc_position_size(price, atr)
-        sl = price + (atr * ATR_SL_MULT)
-        tp = price - (atr * ATR_SL_MULT * ATR_TP_MULT)
+        size, sl, tp = calc_position_size(price, atr, available)
+        # For SHORT: SL er over entry, TP er under entry
+        sl_short = price + (atr * ATR_SL_MULT)
+        tp_short = price - (atr * ATR_SL_MULT * ATR_TP_MULT)
 
-        positions[symbol] = {
-            "entry": price, "sl": sl, "tp": tp,
+        # Margin requirement (100% for sikkerhed)
+        margin = size * price
+
+        if margin > available or size <= 0:
+            log.info(f"Ikke nok kapital til SHORT {symbol}")
+            return
+
+        state["positions"][symbol] = {
+            "entry": price, "sl": sl_short, "tp": tp_short,
             "size": size, "direction": "SHORT", "name": name,
+            "opened_at": datetime.now().isoformat()
         }
+        state["capital"] -= margin  # Reserver margin
 
         send_telegram(
             f"🔴 <b>PAPER SHORT åbnet</b>\n"
             f"Aktie: {name} ({symbol})\n"
             f"Pris: {price:.4f}\n"
-            f"SL: {sl:.4f} | TP: {tp:.4f}\n"
-            f"Sentiment: negativ | RSI: {rsi:.1f}\n"
-            f"Kapital: {capital:.2f} USD"
+            f"SL: {sl_short:.4f} | TP: {tp_short:.4f}\n"
+            f"Sentiment: {sentiment:.2f} | RSI: {rsi:.1f}\n"
+            f"Kapital: {state['capital']:.2f} USD"
         )
         log.info(f"SHORT åbnet: {symbol} @ {price}")
 
 
-def check_exits():
-    global capital
-
+def check_exits(state: dict):
     to_close = []
-    for symbol, pos in positions.items():
+
+    for symbol, pos in state["positions"].items():
         current = get_current_price(symbol)
         if current is None:
             continue
@@ -321,40 +383,55 @@ def check_exits():
         hit_sl = (direction == "LONG" and current <= sl) or (direction == "SHORT" and current >= sl)
 
         if hit_tp or hit_sl:
-            pnl    = (current - entry) * size if direction == "LONG" else (entry - current) * size
-            capital += (entry * size) + pnl
+            if direction == "LONG":
+                pnl = (current - entry) * size
+                # Returner initial investering + PnL
+                state["capital"] += (entry * size) + pnl
+            else:  # SHORT
+                pnl = (entry - current) * size
+                # Returner margin + PnL
+                state["capital"] += (entry * size) + pnl
+
             reason  = "TP" if hit_tp else "SL"
             emoji   = "✅" if hit_tp else "❌"
 
-            trade_log.append({"symbol": symbol, "pnl": pnl, "reason": reason})
+            state["trade_log"].append({
+                "symbol": symbol,
+                "direction": direction,
+                "pnl": round(pnl, 2),
+                "reason": reason,
+                "entry": entry,
+                "exit": current,
+                "closed_at": datetime.now().isoformat()
+            })
 
             send_telegram(
                 f"{emoji} <b>PAPER trade lukket — {reason}</b>\n"
                 f"Aktie: {name} ({symbol})\n"
                 f"Entry: {entry:.4f} → Exit: {current:.4f}\n"
                 f"PnL: {'+' if pnl >= 0 else ''}{pnl:.2f} USD\n"
-                f"Kapital: {capital:.2f} USD"
+                f"Kapital: {state['capital']:.2f} USD"
             )
             log.info(f"Lukket {symbol}: {reason} PnL={pnl:.2f}")
             to_close.append(symbol)
 
     for s in to_close:
-        del positions[s]
+        del state["positions"][s]
 
 
-def send_status():
-    total_pnl    = sum(t["pnl"] for t in trade_log)
-    wins         = sum(1 for t in trade_log if t["pnl"] > 0)
-    total_trades = len(trade_log)
+def send_status(state: dict):
+    total_pnl    = sum(t["pnl"] for t in state["trade_log"])
+    wins         = sum(1 for t in state["trade_log"] if t["pnl"] > 0)
+    total_trades = len(state["trade_log"])
     wr           = f"{wins/total_trades*100:.1f}%" if total_trades > 0 else "N/A"
 
-    open_pos = "\n  ingen" if not positions else ""
-    for sym, p in positions.items():
+    open_pos = "\n  ingen" if not state["positions"] else ""
+    for sym, p in state["positions"].items():
         open_pos += f"\n  {sym}: {p['direction']} @ {p['entry']:.4f}"
 
     send_telegram(
         f"📊 <b>PAPER STATUS</b>\n"
-        f"Kapital: {capital:.2f} USD\n"
+        f"Kapital: {state['capital']:.2f} USD\n"
         f"Total PnL: {'+' if total_pnl >= 0 else ''}{total_pnl:.2f} USD\n"
         f"Trades: {total_trades} | WR: {wr}\n"
         f"Åbne positioner:{open_pos}"
@@ -365,35 +442,33 @@ def send_status():
 # MAIN
 # ═════════════════════════════════════════════════════════════════════════════
 def main():
-    log.info("🚀 Stock Trading Bot scanner...")
+    state = load_state()
+    log.info(f"🚀 Stock Trading Bot starter... Kapital: {state['capital']:.2f}")
 
     try:
-        if positions:
-            check_exits()
+        # Tjek exits først
+        if state["positions"]:
+            check_exits(state)
 
+        # Tjek entries
         for symbol, name in SYMBOLS.items():
-            check_entry(symbol, name)
-            time.sleep(13)  # Alpha Vantage: max 5 req/min på gratis tier
+            check_entry(symbol, name, state)
+            time.sleep(1)  # Undgå at overbelaste yfinance
 
-        counter_file = "/tmp/scan_counter.txt"
-        try:
-            with open(counter_file, "r") as f:
-                counter = int(f.read().strip())
-        except Exception:
-            counter = 0
+        # Send status hver 4. scan
+        state["scan_counter"] = state.get("scan_counter", 0) + 1
+        if state["scan_counter"] >= 4:
+            send_status(state)
+            state["scan_counter"] = 0
 
-        counter += 1
-        if counter >= 4:
-            send_status()
-            counter = 0
+        state["last_scan"] = datetime.now().isoformat()
+        save_state(state)
 
-        with open(counter_file, "w") as f:
-            f.write(str(counter))
-
-        log.info(f"Scan færdig. Positioner: {len(positions)}")
+        log.info(f"Scan færdig. Positioner: {len(state['positions'])}")
 
     except Exception as e:
         log.error(f"Fejl i scan: {e}")
+        save_state(state)  # Gem state selvom der var fejl
 
 
 if __name__ == "__main__":

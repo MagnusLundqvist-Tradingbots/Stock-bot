@@ -2,8 +2,8 @@ name: Stock Bot
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
-  workflow_dispatch:
+    - cron: '0 * * * *'  # Kører hver time
+  workflow_dispatch:       # Manuel trigger
 
 jobs:
   run-bot:
@@ -16,8 +16,16 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
-        run: pip install -r Requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Run bot
         env:
@@ -26,3 +34,12 @@ jobs:
           FINNHUB_KEY: ${{ secrets.FINNHUB_KEY }}
         run: python bot.py
         timeout-minutes: 10
+
+      - name: Commit state back to repo
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add state.json bot.log
+          git diff --cached --quiet || git commit -m "Update state [bot]"
+          git push
+        continue-on-error: true
