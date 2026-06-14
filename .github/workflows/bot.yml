@@ -14,18 +14,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -38,10 +31,9 @@ jobs:
         run: python bot.py
         timeout-minutes: 10
 
-      - name: Commit state back to repo
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git pull --rebase origin main || true
-          git add state.json bot.log
-          git diff --cached --quiet && echo "No changes to commit" || (git commit -m "Update state [bot]" && git push)
+      - name: Save state
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: Update state [bot]
+          file_pattern: state.json bot.log
+        continue-on-error: true
