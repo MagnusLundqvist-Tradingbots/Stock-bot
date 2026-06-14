@@ -1,6 +1,4 @@
-
-# Create the updated workflow with state persistence fix
-workflow_yml = """name: Stock Bot
+name: Stock Bot
 
 on:
   schedule:
@@ -44,14 +42,4 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add state.json bot.log
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Update state [bot]"
-            git push
-          fi
-"""
-
-with open("/mnt/agents/output/bot.yml", "w") as f:
-    f.write(workflow_yml)
-print("Workflow updated")
+          git diff --cached --quiet && echo "No changes to commit" || (git commit -m "Update state [bot]" && git push)
