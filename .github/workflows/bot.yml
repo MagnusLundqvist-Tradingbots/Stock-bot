@@ -1,4 +1,6 @@
-name: Stock Bot
+
+# Create the updated workflow with state persistence fix
+workflow_yml = """name: Stock Bot
 
 on:
   schedule:
@@ -8,13 +10,23 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -26,3 +38,20 @@ jobs:
           FINNHUB_KEY: ${{ secrets.FINNHUB_KEY }}
         run: python bot.py
         timeout-minutes: 10
+
+      - name: Commit state back to repo
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add state.json bot.log
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update state [bot]"
+            git push
+          fi
+"""
+
+with open("/mnt/agents/output/bot.yml", "w") as f:
+    f.write(workflow_yml)
+print("Workflow updated")
