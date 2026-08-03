@@ -1111,3 +1111,11 @@
 2026-08-03 02:46:44,278 [INFO] Scan færdig. Positioner: 0
 2026-08-03 06:19:39,973 [INFO] 🚀 Stock Trading Bot starter... Kapital: 10000.00
 2026-08-03 06:19:51,711 [INFO] Scan færdig. Positioner: 0
+2026-08-03 10:40:10,410 [INFO] 🚀 Stock Trading Bot starter... Kapital: 10000.00
+2026-08-03 10:40:20,733 [ERROR] Nyheder fejl NVDA: HTTPSConnectionPool(host='finnhub.io', port=443): Read timed out. (read timeout=10)
+2026-08-03 10:40:31,902 [ERROR] Nyheder fejl AAPL: HTTPSConnectionPool(host='finnhub.io', port=443): Read timed out. (read timeout=10)
+2026-08-03 10:40:43,059 [ERROR] Nyheder fejl MSFT: HTTPSConnectionPool(host='finnhub.io', port=443): Read timed out. (read timeout=10)
+2026-08-03 10:40:54,292 [ERROR] Nyheder fejl CL=F: HTTPSConnectionPool(host='finnhub.io', port=443): Read timed out. (read timeout=10)
+2026-08-03 10:41:05,439 [ERROR] Nyheder fejl GC=F: HTTPSConnectionPool(host='finnhub.io', port=443): Read timed out. (read timeout=10)
+2026-08-03 10:41:06,770 [WARNING] Telegram fejl: 400 - {"ok":false,"error_code":400,"description":"Bad Request: chat not found"}
+2026-08-03 10:41:06,771 [INFO] Scan færdig. Positioner: 0
