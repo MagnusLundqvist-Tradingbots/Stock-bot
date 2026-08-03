@@ -1145,3 +1145,5 @@
 2026-08-03 20:25:18,816 [INFO] LONG åbnet: AAPL @ 303.2699890136719
 2026-08-03 20:25:24,385 [WARNING] Telegram fejl: 400 - {"ok":false,"error_code":400,"description":"Bad Request: chat not found"}
 2026-08-03 20:25:24,386 [INFO] Scan færdig. Positioner: 1
+2026-08-03 22:06:17,239 [INFO] 🚀 Stock Trading Bot starter... Kapital: 2014.81
+2026-08-03 22:06:24,476 [INFO] Scan færdig. Positioner: 1
