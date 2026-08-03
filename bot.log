@@ -1126,3 +1126,10 @@
 2026-08-03 13:39:21,100 [ERROR] Nyheder fejl CL=F: HTTPSConnectionPool(host='finnhub.io', port=443): Read timed out. (read timeout=10)
 2026-08-03 13:39:32,280 [ERROR] Nyheder fejl GC=F: HTTPSConnectionPool(host='finnhub.io', port=443): Read timed out. (read timeout=10)
 2026-08-03 13:39:33,280 [INFO] Scan færdig. Positioner: 0
+2026-08-03 16:21:30,770 [INFO] 🚀 Stock Trading Bot starter... Kapital: 10000.00
+2026-08-03 16:21:41,144 [ERROR] Nyheder fejl NVDA: HTTPSConnectionPool(host='finnhub.io', port=443): Read timed out. (read timeout=10)
+2026-08-03 16:21:52,340 [ERROR] Nyheder fejl AAPL: HTTPSConnectionPool(host='finnhub.io', port=443): Read timed out. (read timeout=10)
+2026-08-03 16:22:03,591 [ERROR] Nyheder fejl MSFT: HTTPSConnectionPool(host='finnhub.io', port=443): Read timed out. (read timeout=10)
+2026-08-03 16:22:14,769 [ERROR] Nyheder fejl CL=F: HTTPSConnectionPool(host='finnhub.io', port=443): Read timed out. (read timeout=10)
+2026-08-03 16:22:25,950 [ERROR] Nyheder fejl GC=F: HTTPSConnectionPool(host='finnhub.io', port=443): Read timed out. (read timeout=10)
+2026-08-03 16:22:26,951 [INFO] Scan færdig. Positioner: 0
