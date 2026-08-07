@@ -1223,3 +1223,6 @@
 2026-08-07 11:01:27,134 [INFO] Scan færdig. Positioner: 1
 2026-08-07 12:56:25,803 [INFO] 🚀 Stock Trading Bot starter... Kapital: 2014.81
 2026-08-07 12:56:32,504 [INFO] Scan færdig. Positioner: 1
+2026-08-07 14:12:51,867 [INFO] 🚀 Stock Trading Bot starter... Kapital: 2014.81
+2026-08-07 14:13:00,191 [WARNING] Telegram fejl: 400 - {"ok":false,"error_code":400,"description":"Bad Request: chat not found"}
+2026-08-07 14:13:00,192 [INFO] Scan færdig. Positioner: 1
