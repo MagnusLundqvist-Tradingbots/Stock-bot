@@ -1470,3 +1470,5 @@
 2026-08-13 11:43:06,443 [ERROR] Nuværende pris fejl AAPL: Too Many Requests. Rate limited. Try after a while.
 2026-08-13 11:43:12,841 [WARNING] Telegram fejl: 400 - {"ok":false,"error_code":400,"description":"Bad Request: chat not found"}
 2026-08-13 11:43:12,841 [INFO] Scan færdig. Positioner: 1
+2026-08-13 13:03:14,083 [INFO] 🚀 Stock Trading Bot starter... Kapital: 2014.81
+2026-08-13 13:03:21,247 [INFO] Scan færdig. Positioner: 1
