@@ -2188,3 +2188,7 @@
 2026-08-31 03:30:52,379 [INFO] 🚀 Stock Trading Bot starter... Kapital: 2014.81
 2026-08-31 03:30:59,156 [WARNING] Telegram fejl: 400 - {"ok":false,"error_code":400,"description":"Bad Request: chat not found"}
 2026-08-31 03:30:59,157 [INFO] Scan færdig. Positioner: 1
+2026-08-31 10:29:20,704 [INFO] 🚀 Stock Trading Bot starter... Kapital: 2014.81
+2026-08-31 10:29:25,681 [ERROR] Nyheder fejl CL=F: Expecting value: line 1 column 1 (char 0)
+2026-08-31 10:29:27,033 [ERROR] Nyheder fejl GC=F: Expecting value: line 1 column 1 (char 0)
+2026-08-31 10:29:28,034 [INFO] Scan færdig. Positioner: 1
