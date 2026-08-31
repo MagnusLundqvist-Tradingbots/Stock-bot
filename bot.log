@@ -2192,3 +2192,5 @@
 2026-08-31 10:29:25,681 [ERROR] Nyheder fejl CL=F: Expecting value: line 1 column 1 (char 0)
 2026-08-31 10:29:27,033 [ERROR] Nyheder fejl GC=F: Expecting value: line 1 column 1 (char 0)
 2026-08-31 10:29:28,034 [INFO] Scan færdig. Positioner: 1
+2026-08-31 17:51:09,652 [INFO] 🚀 Stock Trading Bot starter... Kapital: 2014.81
+2026-08-31 17:51:16,583 [INFO] Scan færdig. Positioner: 1
