@@ -2219,3 +2219,7 @@
 2026-09-02 10:35:47,483 [INFO] Scan færdig. Positioner: 1
 2026-09-02 14:57:07,193 [INFO] 🚀 Stock Trading Bot starter... Kapital: 2014.81
 2026-09-02 14:57:14,339 [INFO] Scan færdig. Positioner: 1
+2026-09-02 18:28:09,131 [INFO] 🚀 Stock Trading Bot starter... Kapital: 2014.81
+2026-09-02 18:28:10,204 [WARNING] Telegram fejl: 400 - {"ok":false,"error_code":400,"description":"Bad Request: chat not found"}
+2026-09-02 18:28:10,205 [INFO] Lukket AAPL: TP PnL=607.70
+2026-09-02 18:28:17,374 [INFO] Scan færdig. Positioner: 0
