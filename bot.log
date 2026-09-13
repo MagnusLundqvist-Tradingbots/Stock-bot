@@ -2395,3 +2395,6 @@
 2026-09-13 03:03:50,541 [INFO] Ikke nok kapital til LONG NVDA
 2026-09-13 03:03:57,586 [WARNING] Telegram fejl: 400 - {"ok":false,"error_code":400,"description":"Bad Request: chat not found"}
 2026-09-13 03:03:57,586 [INFO] Scan færdig. Positioner: 0
+2026-09-13 08:49:13,914 [INFO] 🚀 Stock Trading Bot starter... Kapital: 10607.70
+2026-09-13 08:49:14,259 [INFO] Ikke nok kapital til LONG NVDA
+2026-09-13 08:49:19,886 [INFO] Scan færdig. Positioner: 0
