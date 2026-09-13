@@ -2391,3 +2391,7 @@
 2026-09-12 21:13:56,484 [INFO] Scan færdig. Positioner: 0
 2026-09-12 23:42:48,259 [INFO] 🚀 Stock Trading Bot starter... Kapital: 10607.70
 2026-09-12 23:42:54,568 [INFO] Scan færdig. Positioner: 0
+2026-09-13 03:03:49,871 [INFO] 🚀 Stock Trading Bot starter... Kapital: 10607.70
+2026-09-13 03:03:50,541 [INFO] Ikke nok kapital til LONG NVDA
+2026-09-13 03:03:57,586 [WARNING] Telegram fejl: 400 - {"ok":false,"error_code":400,"description":"Bad Request: chat not found"}
+2026-09-13 03:03:57,586 [INFO] Scan færdig. Positioner: 0
