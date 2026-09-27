@@ -2579,3 +2579,6 @@
 2026-09-26 18:17:56,427 [INFO] Scan færdig. Positioner: 0
 2026-09-26 21:48:16,780 [INFO] 🚀 Stock Trading Bot starter... Kapital: 10607.70
 2026-09-26 21:48:23,921 [INFO] Scan færdig. Positioner: 0
+2026-09-27 00:12:26,480 [INFO] 🚀 Stock Trading Bot starter... Kapital: 10607.70
+2026-09-27 00:12:33,580 [WARNING] Telegram fejl: 400 - {"ok":false,"error_code":400,"description":"Bad Request: chat not found"}
+2026-09-27 00:12:33,581 [INFO] Scan færdig. Positioner: 0
