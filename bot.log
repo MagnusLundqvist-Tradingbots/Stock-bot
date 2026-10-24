@@ -2880,3 +2880,7 @@
 2026-10-24 03:12:35,298 [INFO] 🚀 Stock Trading Bot starter... Kapital: 10607.70
 2026-10-24 03:12:38,381 [INFO] Ikke nok kapital til LONG MSFT
 2026-10-24 03:12:41,826 [INFO] Scan færdig. Positioner: 0
+2026-10-24 08:37:08,444 [INFO] 🚀 Stock Trading Bot starter... Kapital: 10607.70
+2026-10-24 08:37:11,480 [INFO] Ikke nok kapital til LONG MSFT
+2026-10-24 08:37:15,492 [WARNING] Telegram fejl: 400 - {"ok":false,"error_code":400,"description":"Bad Request: chat not found"}
+2026-10-24 08:37:15,493 [INFO] Scan færdig. Positioner: 0
